@@ -16,10 +16,10 @@
 
   const DEFAULT_SETTINGS = {
     criteria: [
-      { name: '味道', weight: 50, hint: '' },
-      { name: '創意', weight: 20, hint: '' },
-      { name: '食材運用', weight: 20, hint: '① 主食材突出程度　② 烹飪方式是否適合　③ 食材、調味搭配是否合理' },
-      { name: '擺盤', weight: 10, hint: '' },
+      { name: '味道', weight: 50, hint: '風味、調味、口感與整體平衡' },
+      { name: '創意', weight: 20, hint: '原創性、料理巧思與特色' },
+      { name: '食材運用', weight: 20, hint: '食材處理、烹飪技巧、搭配合理性' },
+      { name: '擺盤', weight: 10, hint: '視覺美感、整潔度、呈現方式' },
     ],
     deck: [
       { icon: '⏰', title: '時間先鋒', desc: '團體戰可以比對手提早 5 分鐘開始烹飪。', note: '只能提前開始，不延後結束時間。', duration: 5 },
@@ -86,6 +86,14 @@
     state = freshState();
   }
   state = Object.assign(freshState(), state);
+  // migrate saved settings to the current scoring hints (keeps custom hints)
+  (function migrateHints() {
+    const OLD = ['', '① 主食材突出程度　② 烹飪方式是否適合　③ 食材、調味搭配是否合理'];
+    const byName = Object.fromEntries(DEFAULT_SETTINGS.criteria.map((c) => [c.name, c.hint]));
+    (state.settings.criteria || []).forEach((c) => {
+      if (byName[c.name] && OLD.includes(c.hint || '')) c.hint = byName[c.name];
+    });
+  })();
 
   const save = () => {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }

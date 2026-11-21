@@ -1,7 +1,7 @@
 // Offline cache: lets the page open again even without network / server.
 // Game progress itself lives in localStorage (see app.js), not here.
-const CACHE = 'ccw-denver-cache-v5';
-const CORE = ['./', './index.html', './style.css?v=8', './app.js?v=8'];
+const CACHE = 'ccw-denver-cache-v6';
+const CORE = ['./', './index.html', './style.css?v=9', './app.js?v=9'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
