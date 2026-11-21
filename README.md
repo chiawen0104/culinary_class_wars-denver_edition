@@ -1,2 +1,35 @@
-# culinary_class_wars-denver_edition
-A cooking competition web app inspired by Culinary Class Wars.
+# Culinary Class Wars: Denver Edition（黑白大廚：丹佛版）
+
+A cooking competition web app inspired by Culinary Class Wars. 純前端單機網頁，一台電腦（評審）操作即可，不需要伺服器。
+
+## 流程
+
+1. **參賽者設定**：輸入姓名（至少 4 人，按「＋」新增），隨機抽出 2 位評審，其餘分成黑隊／白隊
+2. **採購戰**：評審輸入每場 1v1 的指定主食材，兩隊輸入總花費，花費少的隊伍勝
+3. **採購戰抽卡**：勝隊從 4 張特權卡中翻 1 張
+4. **第一輪 1v1 個人戰**：評審設定倒數時間（預設 50 分鐘）後按開始
+5. **個人戰盲測評分**：兩位評審分別評分（料理以 A/B 編號，不顯示選手），送出後分數隱藏，兩人都送出後揭曉
+6. **個人戰抽卡**：2:1 勝隊抽 1 張、3:0 勝隊抽 2 張（平手不抽）
+7. **第二輪 3v3 團體戰**：評審設定倒數時間（預設 40 分鐘）後按開始
+8. **最終評分及冠軍揭曉**
+
+評分比例：味道 50%、創意 20%、食材運用 20%（主食材突出程度、烹飪方式是否適合、食材與調味搭配是否合理）、擺盤 10%。
+
+特權卡：⏰ 時間先鋒、🥩 食材搶奪權、🧊 時間凍結、🧑‍🍳 評審幫手。
+
+評分項目、權重與四張特權卡內容都可以在右上角「⚙ 設定」修改。進度自動存在瀏覽器（localStorage），重新整理不會遺失。
+
+## 本機執行
+
+直接用瀏覽器打開 `index.html`，或：
+
+```bash
+python3 -m http.server 8123
+```
+
+## 部署到 GitHub Pages（免費）
+
+1. 把程式碼 push 到 GitHub 的 `main` 分支
+2. 到 repo 的 **Settings → Pages**
+3. **Source** 選 `Deploy from a branch`，Branch 選 `main`、資料夾選 `/ (root)`，按 Save
+4. 約一分鐘後網址會出現在同一頁：`https://<你的帳號>.github.io/culinary_class_wars-denver_edition/`

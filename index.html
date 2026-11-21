@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Culinary Class Wars: Denver Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"><i class="b"></i><i class="w"></i></span>
+      <div>
+        <div class="brand-en">CULINARY CLASS WARS</div>
+        <div class="brand-zh">黑白大廚：丹佛版</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="ghost" id="btn-settings" title="設定">⚙ 設定</button>
+      <button class="ghost" id="btn-reset" title="重新開始">↺ 重來</button>
+    </div>
+  </header>
+
+  <nav class="stepper" id="stepper"></nav>
+
+  <main id="app"></main>
+
+  <dialog id="settings">
+    <form method="dialog" class="settings-form" id="settings-form"></form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
