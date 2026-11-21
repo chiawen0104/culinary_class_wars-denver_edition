@@ -7,10 +7,10 @@
     { title: '參賽者設定', desc: '輸入參賽者姓名，指定或抽籤選出 2 位評審，其餘抽籤分成黑隊、白隊' },
     { title: '採購戰', desc: '評審指定個人戰主食材，兩隊一起採買兩輪食材，比較總花費' },
     { title: '採購戰抽卡', desc: '總花費較少的隊伍抽一張團體賽用的特權卡' },
-    { title: '第一輪：1v1 個人戰', desc: '一對一 PK，每人煮一道 1–2 人份的菜／前菜／湯／甜點' },
+    { title: '第一輪：1v1 個人戰', desc: '不限時，一對一 PK，每人煮一道 1–2 人份的菜／前菜／湯／甜點' },
     { title: '個人戰盲測評分', desc: '兩位評審各自打分，計算各場結果與隊伍戰績' },
     { title: '個人戰抽卡', desc: '2:1 勝隊抽 1 張；3:0 勝隊抽 2 張' },
-    { title: '第二輪：團體戰', desc: '全隊完成 4 人份主食（飯／麵／肉），可隨時使用特權卡' },
+    { title: '第二輪：團體戰', desc: '不限時，全隊完成 4 人份主食（飯／麵／肉），可隨時使用特權卡' },
     { title: '最終評分及冠軍揭曉', desc: '兩位評審打分，公布黑白大廚總冠軍' },
   ];
 
@@ -22,9 +22,9 @@
       { name: '擺盤', weight: 10, hint: '視覺美感、整潔度、呈現方式' },
     ],
     deck: [
-      { icon: '⏰', title: '時間先鋒', desc: '團體戰可以比對手提早 5 分鐘開始烹飪。', note: '只能提前開始，不延後結束時間。', duration: 5 },
+      { icon: '🎁', title: '神祕食材', desc: '對手的料理必須額外加入一樣評審事先準備的食材。', note: '必須於團體戰開始前使用。', duration: 0 },
       { icon: '🥩', title: '食材搶奪權', desc: '要求對手提出 3 種可被搶走的非必要食材，從中選擇 1 種奪取。', note: '必須於團體戰開始前使用。', duration: 0 },
-      { icon: '🧊', title: '時間凍結', desc: '團體戰進行中，指定對手全隊停止所有料理操作 3 分鐘。', note: '計時不停止，但正在進行的必要食品安全處理不受影響。', duration: 3 },
+      { icon: '🤐', title: '主廚禁言令', desc: '指定對手一位選手，禁止說話 5 分鐘，只能用手勢溝通。', note: '團體戰進行中使用。', duration: 5 },
       { icon: '🧑‍🍳', title: '評審幫手', desc: '指定一位評審協助洗菜、切菜或備料 5 分鐘。', note: '評審不可調味、烹飪或代替選手決策。', duration: 5 },
     ],
     r1Min: 50,
@@ -86,6 +86,13 @@
     state = freshState();
   }
   state = Object.assign(freshState(), state);
+  // migrate saved decks: replace the retired time-based cards with the new defaults
+  (function migrateDeck() {
+    const swap = { '時間先鋒': 0, '時間凍結': 2 };
+    (state.settings.deck || []).forEach((c, i, deck) => {
+      if (c.title in swap) deck[i] = clone(DEFAULT_SETTINGS.deck[swap[c.title]]);
+    });
+  })();
   // migrate saved settings to the current scoring hints (keeps custom hints)
   (function migrateHints() {
     const OLD = ['', '① 主食材突出程度　② 烹飪方式是否適合　③ 食材、調味搭配是否合理'];
@@ -197,7 +204,7 @@
     () => `<ul class="rules">
         <li>黑白兩隊選手<b>一對一 PK</b>，每場使用評審指定的主食材。</li>
         <li>每人煮一道 <b>1–2 人份</b>的菜／前菜／湯／甜點。</li>
-        <li>倒數時間由評審設定，按「開始倒數」後計時；時間到必須停止料理。</li>
+        <li><b>不限時</b>，慢慢煮、好好享受，完成後進入評分。</li>
       </ul>`,
     () => `<ul class="rules">
         <li>料理只標示「料理 N（黑隊／白隊）」，不顯示選手姓名。</li>
@@ -207,8 +214,8 @@
     () => `<ul class="rules"><li>個人戰 2:1 勝隊抽 <b>1 張</b>；3:0 勝隊抽 <b>2 張</b>；平手不抽。</li><li>特權卡在第二輪團體戰使用。</li></ul><h3>四張特權卡</h3>${cardListHtml()}`,
     () => `<ul class="rules">
         <li>全隊合作完成 <b>4 人份主食</b>（飯／麵／肉）。</li>
-        <li>倒數時間由評審設定，按「開始倒數」後計時。</li>
-        <li>隊伍要使用特權卡時，評審在計時器下方按該隊的「使用」，畫面會出現說明與效果倒數。</li>
+        <li><b>不限時</b>，兩隊都完成後進入最終評分。</li>
+        <li>隊伍要使用特權卡時，評審在這一頁按該隊的「使用」，畫面會出現說明與效果倒數。</li>
       </ul><h3>特權卡</h3>${cardListHtml()}`,
     () => `<ul class="rules"><li>兩位評審分別為兩隊主食打分，送出後隱藏。</li><li>兩位評審分數加總，總分高的隊伍為總冠軍。</li></ul><h3>評分比例</h3>${critListHtml()}`,
   ];
@@ -527,7 +534,7 @@
 
   function pageRound1() {
     return `
-      ${timerBlock('r1', Number(state.settings.r1Min) || 50)}
+      <div class="card no-timer"><div class="nt-icon">🍳</div><div><b>不限時，慢慢煮！</b><div class="muted small">選手完成料理後，按「進入評分」。</div></div></div>
       <div class="card">
         <h3>本輪對戰與主食材</h3>
         ${matchupList(true)}
@@ -538,7 +545,8 @@
 
   function pageRound2() {
     return `
-      ${timerBlock('r2', Number(state.settings.r2Min) || 40, cardUsePanel())}
+      <div class="card no-timer"><div class="nt-icon">🍳</div><div><b>不限時，全隊一起完成主食！</b><div class="muted small">兩隊都完成後，按「進入最終評分」。</div></div></div>
+      <div class="card"><h3>特權卡使用</h3>${cardUsePanel()}</div>
       <div class="grid-2">
         ${['black', 'white'].map((t) => `
           <div class="team ${t}">
@@ -958,7 +966,7 @@
         ${s.criteria.map((c) => critRow(c)).join('')}
       </div>
       <button type="button" class="add-btn" id="add-crit">＋ 新增評分項目</button>
-      <p class="hint">名稱留空即刪除該項目。權重會自動依比例換算成 100 分制。倒數時間請在每一輪的計時頁面設定。</p>
+      <p class="hint">名稱留空即刪除該項目。權重會自動依比例換算成 100 分制。比賽不限時。</p>
       <h3>四張特權卡</h3>
       ${s.deck.map((c) => `
         <div class="set-card">
