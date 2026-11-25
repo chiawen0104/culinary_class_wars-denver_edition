@@ -432,3 +432,91 @@ dialog::backdrop { background: rgba(30, 26, 20, .45); backdrop-filter: blur(3px)
 .no-timer .nt-icon { font-size: 2rem; }
 .no-timer b { font-family: var(--serif); font-size: 1.1rem; }
 .card > .card-use { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* ---------- Name entry ---------- */
+.entry-card h3 { font-size: 1.2rem; }
+.entry-progress { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; color: var(--muted); }
+.entry-progress b { color: var(--ink); font-size: 1.15rem; }
+.entry-progress .dots { display: flex; gap: 5px; }
+.entry-progress .dots i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--ink); }
+.entry-progress .dots i.on { background: var(--ink); }
+.entry-row { display: flex; gap: 10px; margin-top: 12px; }
+.entry-row input { font-size: 1.2rem; padding: 12px 14px; }
+.entry-row button { flex: none; }
+.entered { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.entered .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: .88rem; }
+.entered button { padding: 4px 12px; font-size: .82rem; margin-left: auto; }
+
+/* ---------- Secret role card (full screen) ---------- */
+.role-screen {
+  position: fixed; inset: 0; z-index: 40; overflow-y: auto;
+  display: flex; align-items: center; justify-content: center; padding: 32px 20px;
+  animation: fadein .35s ease both;
+}
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.role-screen.black { background: radial-gradient(circle at 50% 25%, #34312c, var(--ink) 70%); color: var(--white); }
+.role-screen.white { background: radial-gradient(circle at 50% 25%, #ffffff, #f1ece1 75%); color: var(--ink); }
+.rc-inner { width: 100%; max-width: 520px; text-align: center; animation: pop .55s cubic-bezier(.2, .8, .2, 1) .1s both; }
+.rc-hello { font-family: var(--serif); font-size: 1.15rem; opacity: .75; }
+.rc-team { font-family: var(--display); font-size: clamp(4.5rem, 20vw, 7.5rem); letter-spacing: .1em; line-height: 1; margin-top: 8px; }
+.rc-team-zh { font-family: var(--serif); font-weight: 900; font-size: 1.5rem; letter-spacing: .3em; margin-top: 2px; }
+.rc-role {
+  display: inline-block; margin-top: 22px; padding: 10px 26px; border-radius: 999px;
+  font-family: var(--serif); font-weight: 900; font-size: 1.5rem; border: 2px solid currentColor;
+}
+.role-screen.black .rc-role.judge { background: var(--white); color: var(--ink); border-color: var(--white); }
+.role-screen.white .rc-role.judge { background: var(--ink); color: var(--white); border-color: var(--ink); }
+.rc-desc { margin: 18px auto 0; max-width: 400px; font-size: .98rem; opacity: .8; line-height: 1.7; }
+.rc-pick { margin-top: 22px; padding: 18px; border-radius: var(--radius); border: 1.5px dashed currentColor; }
+.rc-pick-title { margin-bottom: 12px; }
+.ing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ing-grid button { font-size: 1.05rem; font-weight: 700; padding: 12px 6px; border-radius: 14px; }
+.role-screen.black .ing-grid button { background: transparent; color: var(--white); border-color: rgba(255, 255, 255, .4); }
+.role-screen.black .ing-grid button.on { background: var(--white); color: var(--ink); border-color: var(--white); }
+.role-screen.white .ing-grid button.on { background: var(--ink); color: var(--white); border-color: var(--ink); }
+.ing-grid button:disabled { opacity: .45; }
+.ing-grid button.on:disabled { opacity: 1; }
+.rc-next { margin-top: 26px; width: 100%; max-width: 360px; }
+.role-screen.black .rc-next { background: var(--white); color: var(--ink); border-color: var(--white); font-weight: 700; }
+.role-screen.white .rc-next { background: var(--ink); color: var(--white); border-color: var(--ink); font-weight: 700; }
+
+/* ---------- Team announcement ---------- */
+.assigned-ing {
+  margin-top: 16px; padding-top: 12px; border-top: 1px dashed rgba(128, 128, 128, .45);
+  display: flex; justify-content: space-between; align-items: baseline; font-size: .9rem; opacity: .9;
+}
+.assigned-ing b { font-family: var(--serif); font-size: 1.5rem; }
+.peek-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.peek-list button { padding: 6px 16px; font-size: .92rem; }
+
+@media (max-width: 520px) {
+  .entry-row { flex-direction: column; }
+  .entry-row button { width: 100%; }
+  .ing-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- Shared draw: card owner ---------- */
+.pcard .front .owner-tag { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); }
+.pcard.owner-black .front { box-shadow: 0 0 0 4px var(--ink), var(--shadow-lg); }
+.pcard.owner-white .front { box-shadow: 0 0 0 4px var(--white), 0 0 0 5.5px var(--ink), var(--shadow-lg); }
+
+/* ---------- Cooking page ---------- */
+.members-line { margin-top: 10px; opacity: .75; font-size: .95rem; }
+.dish-list { margin: 14px 0 0; padding: 0; list-style: none; counter-reset: dish; }
+.dish-list li {
+  counter-increment: dish; display: grid; grid-template-columns: 30px 1fr; column-gap: 8px;
+  padding: 10px 0; border-top: 1px solid rgba(128, 128, 128, .25);
+}
+.dish-list li::before { content: counter(dish); grid-row: span 2; font-family: var(--display); font-size: 1.6rem; line-height: 1.1; opacity: .5; }
+.dish-list li b { font-family: var(--serif); font-size: 1.08rem; }
+.dish-list li span { font-size: .85rem; opacity: .7; }
+
+/* ---------- Judge reveal ---------- */
+.judge-reveal { text-align: center; padding: 30px 20px; }
+.judge-reveal .label { text-align: left; }
+.jr-name { font-family: var(--serif); font-weight: 900; font-size: 2.2rem; margin-top: 20px; }
+.jr-note { margin-top: 8px; opacity: .7; font-size: .92rem; }
+
+/* ---------- Results ---------- */
+table.results tr.total-row td { border-bottom: 2px solid var(--ink); font-weight: 700; }
+table.results td:first-child { text-align: left; }

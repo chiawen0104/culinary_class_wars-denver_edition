@@ -1,17 +1,15 @@
 (() => {
   'use strict';
 
-  const STORE_KEY = 'ccw-denver-v3';
+  const STORE_KEY = 'ccw-denver-v4';
 
   const STEPS = [
-    { title: '參賽者設定', desc: '輸入參賽者姓名，指定或抽籤選出 2 位評審，其餘抽籤分成黑隊、白隊' },
-    { title: '採購戰', desc: '評審指定個人戰主食材，兩隊一起採買兩輪食材，比較總花費' },
-    { title: '採購戰抽卡', desc: '總花費較少的隊伍抽一張團體賽用的特權卡' },
-    { title: '第一輪：1v1 個人戰', desc: '不限時，一對一 PK，每人煮一道 1–2 人份的菜／前菜／湯／甜點' },
-    { title: '個人戰盲測評分', desc: '兩位評審各自打分，計算各場結果與隊伍戰績' },
-    { title: '個人戰抽卡', desc: '2:1 勝隊抽 1 張；3:0 勝隊抽 2 張' },
-    { title: '第二輪：團體戰', desc: '不限時，全隊完成 4 人份主食（飯／麵／肉），可隨時使用特權卡' },
-    { title: '最終評分及冠軍揭曉', desc: '兩位評審打分，公布黑白大廚總冠軍' },
+    { title: '分隊與角色', desc: '8 人輪流輸入自己的名字，偷偷查看自己的隊伍與角色' },
+    { title: '採購戰', desc: '兩隊一起採買三道料理的食材，總花費較少的隊伍獲勝' },
+    { title: '採購戰抽卡', desc: '花費較少的隊伍抽 2 張特權卡，另一隊抽 1 張' },
+    { title: '料理時間', desc: '不限時，每隊完成指定食材料理、自由菜、自由主食各一道' },
+    { title: '秘密評審揭曉', desc: '公布兩隊藏著的秘密評審' },
+    { title: '評分與冠軍揭曉', desc: '兩位評審為六道料理評分，公布黑白大廚總冠軍' },
   ];
 
   const DEFAULT_SETTINGS = {
@@ -31,7 +29,14 @@
     r2Min: 40,
   };
 
+  const TOTAL_PLAYERS = 8;
+  const INGREDIENTS = ['雞蛋', '豆腐', '馬鈴薯', '茄子', '蝦仁', '番茄'];
   const TEAM_NAME = { black: '黑隊', white: '白隊' };
+  const DISHES = [
+    { key: 'ing', name: '指定食材料理', sub: (t) => `必須使用：${state.ingredientFor[t] || '—'}` },
+    { key: 'free', name: '自由菜', sub: () => '菜、肉、湯、甜點都可以' },
+    { key: 'staple', name: '自由主食', sub: () => '飯、麵等主食' },
+  ];
   const TEAM_EN = { black: 'BLACK', white: 'WHITE' };
 
   // ---------------- utils ----------------
@@ -58,9 +63,10 @@
     return {
       step: 0,
       maxStep: 0,
-      players: ['', '', '', ''],
-      judgeMode: 'random',
-      judgeFlags: [],
+      roleSlots: null,      // 8 shuffled {team, role} slots, dealt in name-entry order
+      entries: [],          // [{ name, team, role }]
+      revealIdx: null,      // entry whose role card is on screen right now
+      ingredientFor: { black: null, white: null },
       assigned: false,
       judges: [],
       black: [],
@@ -75,6 +81,7 @@
       scores: { r1: [{}, {}], r2: [{}, {}] },
       submitted: { r1: [false, false], r2: [false, false] },
       revealed: false,
+      judgesRevealed: false,
       settings: settings ? clone(settings) : clone(DEFAULT_SETTINGS),
     };
   }
@@ -106,10 +113,9 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   };
 
-  const ui = { tab: { r1: 0, r2: 0 }, error: '', fullscreen: false };
+  const ui = { tab: { r1: 0, r2: 0 }, error: '', fullscreen: false, peek: null };
 
   // ---------------- derived ----------------
-  const matchCount = () => Math.min(state.black.length, state.white.length);
   const crit = () => state.settings.criteria;
 
   function getVals(round, j, id) {
@@ -121,48 +127,27 @@
     const totalW = crit().reduce((s, c) => s + Number(c.weight || 0), 0) || 1;
     return (vals.reduce((s, v, k) => s + v * Number(crit()[k].weight || 0), 0) / totalW) * 10;
   }
-  const teamOfDish = (i, label) => (state.blind[i] ? (label === 'A' ? 'black' : 'white') : (label === 'A' ? 'white' : 'black'));
-  const dishOfTeam = (i, team) => (teamOfDish(i, 'A') === team ? 'A' : 'B');
-
-  function r1Results() {
+  function finalResults() {
     const rows = [];
-    let bw = 0, ww = 0;
-    for (let i = 0; i < matchCount(); i++) {
-      const b = dishOfTeam(i, 'black'), w = dishOfTeam(i, 'white');
-      const bj = [0, 1].map((j) => dishScore('r1', j, i + b));
-      const wj = [0, 1].map((j) => dishScore('r1', j, i + w));
-      const bt = bj[0] + bj[1], wt = wj[0] + wj[1];
-      const winner = Math.abs(bt - wt) < 1e-9 ? null : bt > wt ? 'black' : 'white';
-      if (winner === 'black') bw++;
-      if (winner === 'white') ww++;
-      rows.push({ i, bj, wj, bt, wt, winner, bLabel: b, wLabel: w });
-    }
-    const n = matchCount();
-    let team = null, count = 0;
-    if (bw !== ww) {
-      team = bw > ww ? 'black' : 'white';
-      const wins = Math.max(bw, ww);
-      count = n >= 2 && wins === n ? 2 : 1;
-    }
-    return { rows, bw, ww, team, count };
+    const tot = { black: [0, 0], white: [0, 0] };
+    ['black', 'white'].forEach((t) => DISHES.forEach((x) => {
+      const js = [0, 1].map((j) => dishScore('r2', j, `${t}-${x.key}`));
+      tot[t][0] += js[0]; tot[t][1] += js[1];
+      rows.push({ t, x, js });
+    }));
+    const bt = tot.black[0] + tot.black[1], wt = tot.white[0] + tot.white[1];
+    const winner = Math.abs(bt - wt) < 1e-9 ? null : bt > wt ? 'black' : 'white';
+    return { rows, tot, bt, wt, winner };
   }
 
-  function r2Results() {
-    const bj = [0, 1].map((j) => dishScore('r2', j, 'black'));
-    const wj = [0, 1].map((j) => dishScore('r2', j, 'white'));
-    const bt = bj[0] + bj[1], wt = wj[0] + wj[1];
-    const winner = Math.abs(bt - wt) < 1e-9 ? null : bt > wt ? 'black' : 'white';
-    return { bj, wj, bt, wt, winner };
-  }
+  // purchase-battle draw: winner (lower spend) picks 2, the other team picks 1, from one shared deck of 4
+  const drawOrder = () => (state.purchaseWinner ? [state.purchaseWinner, state.purchaseWinner, other(state.purchaseWinner)] : []);
 
   function heldCards(team) {
-    const out = [];
-    Object.entries(state.draws).forEach(([key, d]) => {
-      if (d.team === team) d.picked.forEach((p) => out.push(Object.assign({ id: key + '-' + p }, d.cards[p])));
-    });
-    return out;
+    const d = state.draws.purchase;
+    if (!d || !d.picks) return [];
+    return d.picks.filter((x) => x.team === team).map((x) => Object.assign({ id: 'purchase-' + x.p }, d.cards[x.p]));
   }
-
 
   // ---------------- rules text ----------------
   const critListHtml = () => `
@@ -176,13 +161,12 @@
     return `
       <h3>📖 比賽規則</h3>
       <ol class="rules">
-        <li><b>參賽者設定</b>：2 位評審可以<b>指定</b>，也可以<b>隨機抽籤</b>選出；其餘參賽者抽籤分成黑隊、白隊。</li>
-        <li><b>採購戰</b>：評審指定第一輪個人戰每場的主食材；兩輪食材一起採買，以隊為單位。總花費較少的隊伍可抽取一張團體賽用的特權卡。</li>
-        <li><b>第一輪：1v1 個人戰</b>：黑白兩隊選手一對一 PK，每人煮一道 <b>1–2 人份</b>的菜／前菜／湯／甜點，必須使用評審指定的主食材。</li>
-        <li><b>盲測評分</b>：評審不知道料理是哪位選手做的，兩位評審分數加總，高者贏得該場。</li>
-        <li><b>個人戰抽卡</b>：2:1 勝隊抽 1 張特權卡；3:0 勝隊抽 2 張。</li>
-        <li><b>第二輪：團體戰</b>：全隊合作完成 <b>4 人份主食</b>（飯／麵／肉），可使用特權卡。</li>
-        <li><b>最終評分</b>：兩位評審打分，總分高的隊伍成為黑白大廚總冠軍！</li>
+        <li><b>分隊與角色</b>：8 人輪流輸入自己的名字，隨機分成黑隊、白隊各 4 人。<b>每隊都藏著一位秘密評審</b>，由他為對手隊伍選一樣指定食材。</li>
+        <li><b>採購戰</b>：兩隊一起採買三道料理需要的食材，以隊為單位，總花費較少的隊伍獲勝。</li>
+        <li><b>採購戰抽卡</b>：採購勝隊從四張特權卡中抽 <b>2 張</b>，另一隊抽 <b>1 張</b>。</li>
+        <li><b>料理時間</b>：不限時，每隊完成三道料理：<b>指定食材料理</b>（必須使用指定食材）、<b>自由菜</b>、<b>自由主食</b>，可隨時使用特權卡。</li>
+        <li><b>秘密評審揭曉</b>：全部煮完後，公布兩隊的秘密評審。</li>
+        <li><b>評分與冠軍揭曉</b>：兩位評審為六道料理評分，總分高的隊伍成為黑白大廚總冠軍！</li>
       </ol>
       <p class="muted small">評分比例：${crit().map((c) => `${esc(c.name)} ${c.weight}%`).join('、')}</p>`;
   }
@@ -191,33 +175,26 @@
     return `
       <h3>📋 採購戰規則</h3>
       <ul class="rules">
-        <li>評審指定<b>第一輪個人戰每一場</b>的主食材。</li>
-        <li>兩輪（個人戰＋團體戰）的食材<b>一起採買</b>，以<b>隊</b>為單位。</li>
-        <li>總花費較少的隊伍，可抽取一張<b>團體賽用</b>的特權卡；花費相同由評審決定。</li>
+        <li>兩隊一起採買<b>三道料理</b>需要的所有食材，以<b>隊</b>為單位。</li>
+        <li>別忘了買對手秘密評審幫你們選的<b>指定食材</b>！</li>
+        <li>總花費較少的隊伍獲勝，抽 <b>2 張</b>特權卡；另一隊抽 <b>1 張</b>。花費相同時擲硬幣決定。</li>
       </ul>`;
   }
 
   const STEP_RULES = [
     () => overviewHtml(),
     () => procureRulesHtml(),
-    () => `<ul class="rules"><li>採購戰總花費較少的隊伍，從四張蓋著的特權卡中翻開一張。</li><li>特權卡在<b>第二輪團體戰</b>使用。</li></ul><h3>四張特權卡</h3>${cardListHtml()}`,
+    () => `<ul class="rules"><li>採購勝隊先從四張蓋著的特權卡中翻開 <b>2 張</b>，另一隊再從剩下的卡中翻開 <b>1 張</b>。</li><li>最後剩下的一張不使用。</li><li>特權卡在料理時間使用。</li></ul><h3>四張特權卡</h3>${cardListHtml()}`,
     () => `<ul class="rules">
-        <li>黑白兩隊選手<b>一對一 PK</b>，每場使用評審指定的主食材。</li>
-        <li>每人煮一道 <b>1–2 人份</b>的菜／前菜／湯／甜點。</li>
-        <li><b>不限時</b>，慢慢煮、好好享受，完成後進入評分。</li>
-      </ul>`,
-    () => `<ul class="rules">
-        <li>料理只標示「料理 N（黑隊／白隊）」，不顯示選手姓名。</li>
-        <li>兩位評審各自評分，送出後分數會隱藏；兩人都送出後才揭曉。</li>
-        <li>每道料理依下列比例換算成 100 分，兩位評審分數加總，高者贏得該場。</li>
-      </ul><h3>評分比例</h3>${critListHtml()}`,
-    () => `<ul class="rules"><li>個人戰 2:1 勝隊抽 <b>1 張</b>；3:0 勝隊抽 <b>2 張</b>；平手不抽。</li><li>特權卡在第二輪團體戰使用。</li></ul><h3>四張特權卡</h3>${cardListHtml()}`,
-    () => `<ul class="rules">
-        <li>全隊合作完成 <b>4 人份主食</b>（飯／麵／肉）。</li>
-        <li><b>不限時</b>，兩隊都完成後進入最終評分。</li>
-        <li>隊伍要使用特權卡時，評審在這一頁按該隊的「使用」，畫面會出現說明與效果倒數。</li>
+        <li>每隊完成三道料理：</li>
+        <li><b>指定食材料理</b>：必須使用對手秘密評審指定的食材。</li>
+        <li><b>自由菜</b>：菜、肉、湯、甜點都可以。</li>
+        <li><b>自由主食</b>：飯、麵等主食。</li>
+        <li><b>不限時</b>，全部煮完後才揭曉秘密評審。</li>
+        <li>要使用特權卡時，在這一頁按該隊的「使用」，畫面會出現說明與效果倒數。</li>
       </ul><h3>特權卡</h3>${cardListHtml()}`,
-    () => `<ul class="rules"><li>兩位評審分別為兩隊主食打分，送出後隱藏。</li><li>兩位評審分數加總，總分高的隊伍為總冠軍。</li></ul><h3>評分比例</h3>${critListHtml()}`,
+    () => `<ul class="rules"><li>按下按鈕，公布兩隊各自藏著的秘密評審。</li><li>兩位秘密評審接著為六道料理評分。</li></ul>`,
+    () => `<ul class="rules"><li>兩位評審各自為六道料理打分，送出後分數會隱藏，兩人都送出才揭曉。</li><li>每道料理依下列比例換算成 100 分，兩位評審的分數全部加總，總分高的隊伍為總冠軍。</li></ul><h3>評分比例</h3>${critListHtml()}`,
   ];
 
   function cardUsePanel() {
@@ -254,7 +231,7 @@
   // ---------------- render ----------------
   function render() {
     renderStepper();
-    const pages = [pageSetup, pageProcure, pageDrawPurchase, pageRound1, pageScoreR1, pageDrawR1, pageRound2, pageFinal];
+    const pages = [pageSetup, pageProcure, pageDrawPurchase, pageCook, pageReveal, pageFinal];
     $('#app').innerHTML = `
       <div class="page-head">
         <div class="num">STEP ${String(state.step + 1).padStart(2, '0')}</div>
@@ -263,6 +240,7 @@
       </div>
       ${pages[state.step]()}
     `;
+    const en = $('#entry-name'); if (en) en.focus();
     tickTimer();
   }
 
@@ -280,52 +258,100 @@
       ${state.step < STEPS.length - 1 ? `<button class="primary" id="btn-next" ${canNext ? '' : 'disabled'} onclick="A.next()">${nextLabel}</button>` : ''}
     </div>`;
 
-  // ---- Step 1: setup ----
+  // ---- Step 1: name entry + secret roles ----
+  function ensureSlots() {
+    if (!state.roleSlots || state.roleSlots.length !== TOTAL_PLAYERS) {
+      const slots = [];
+      ['black', 'white'].forEach((team) => {
+        slots.push({ team, role: 'judge' });
+        for (let k = 1; k < TOTAL_PLAYERS / 2; k++) slots.push({ team, role: 'member' });
+      });
+      state.roleSlots = shuffle(slots);
+      save();
+    }
+  }
+
+  function roleCard(i, live) {
+    const e = state.entries[i];
+    if (!e) return '';
+    const opp = other(e.team);
+    const isJ = e.role === 'judge';
+    const picked = state.ingredientFor[opp];
+    const picker = isJ ? `
+      <div class="rc-pick">
+        <div class="rc-pick-title">請為 <b>${TEAM_NAME[opp]}</b> 選一樣指定食材</div>
+        <div class="ing-grid">
+          ${INGREDIENTS.map((x) => `<button class="${picked === x ? 'on' : ''}" ${live ? '' : 'disabled'} onclick="A.pickIngredient('${opp}', '${x}')">${x}</button>`).join('')}
+        </div>
+      </div>` : '';
+    const last = state.entries.length >= TOTAL_PLAYERS;
+    return `
+      <div class="role-screen ${e.team}">
+        <div class="rc-inner">
+          <div class="rc-hello">${esc(e.name)}，你是</div>
+          <div class="rc-team">${TEAM_EN[e.team]}</div>
+          <div class="rc-team-zh">${TEAM_NAME[e.team]}</div>
+          <div class="rc-role ${isJ ? 'judge' : ''}">${isJ ? '🕵️ 秘密評審' : '👩‍🍳 隊員'}</div>
+          <p class="rc-desc">${isJ
+            ? '你是隊上的臥底評審：假裝成一般隊員一起料理，最後揭曉身分後負責評分。千萬別被發現！'
+            : '和隊友一起合作料理，拿下冠軍！注意：你的隊上藏著一位秘密評審。'}</p>
+          ${picker}
+          ${live
+            ? `<button class="big rc-next" ${isJ && !picked ? 'disabled' : ''} onclick="A.handOff()">${isJ && !picked ? '先選一樣食材' : `我記住了，${last ? '完成分隊' : '交給下一位'} →`}</button>`
+            : `<button class="big rc-next" onclick="A.closePeek()">看完了，關閉</button>`}
+        </div>
+      </div>`;
+  }
+
   function pageSetup() {
-    if (!state.assigned) {
+    ensureSlots();
+    const n = state.entries.length;
+    if (state.revealIdx !== null && state.revealIdx !== undefined) return roleCard(state.revealIdx, true);
+    if (n < TOTAL_PLAYERS) {
       return `
         <div class="card rule-card">${overviewHtml()}</div>
-        <div class="card">
-          <h3>參賽者名單 <span class="muted small">（至少 4 人，其中 2 人會成為評審）</span></h3>
-          <div class="judge-mode">
-            <span>評審產生方式：</span>
-            <button class="${state.judgeMode !== 'pick' ? 'on' : ''}" onclick="A.setJudgeMode('random')">🎲 隨機抽 2 位</button>
-            <button class="${state.judgeMode === 'pick' ? 'on' : ''}" onclick="A.setJudgeMode('pick')">👆 指定 2 位</button>
-            ${state.judgeMode === 'pick' ? `<span class="muted small">勾選名字旁的「評審」（已選 ${state.judgeFlags.filter(Boolean).length}/2）</span>` : ''}
+        <div class="card entry-card">
+          <div class="entry-progress"><span>第 <b>${n + 1}</b> / ${TOTAL_PLAYERS} 位</span>
+            <span class="dots">${Array.from({ length: TOTAL_PLAYERS }, (_, k) => `<i class="${k < n ? 'on' : ''}"></i>`).join('')}</span></div>
+          <h3>請輸入你的名字</h3>
+          <p class="muted small">輸入後畫面會顯示你的隊伍和角色，<b>只有你自己看</b>。看完按「交給下一位」，把電腦交給下一個人。</p>
+          <div class="entry-row">
+            <input type="text" id="entry-name" placeholder="你的名字" autocomplete="off"
+              onkeydown="if(event.key==='Enter' && !event.isComposing && event.keyCode!==229){A.submitName()}">
+            <button class="primary" onclick="A.submitName()">看我的角色 →</button>
           </div>
-          <div class="player-list">
-            ${state.players.map((p, i) => `
-              <div class="player-row">
-                <span class="idx">${i + 1}</span>
-                ${state.judgeMode === 'pick' ? `<label class="jflag ${state.judgeFlags[i] ? 'on' : ''}"><input type="checkbox" ${state.judgeFlags[i] ? 'checked' : ''} onchange="A.toggleJudge(${i})">評審</label>` : ''}
-                <input type="text" value="${esc(p)}" placeholder="姓名" oninput="A.setPlayer(${i}, this.value)" onkeydown="if(event.key==='Enter' && !event.isComposing && event.keyCode!==229){A.addPlayer()}" data-player="${i}">
-                ${state.players.length > 4 ? `<button class="ghost danger" title="移除" onclick="A.removePlayer(${i})">✕</button>` : ''}
-              </div>`).join('')}
-          </div>
-          <div style="margin-top:12px"><button class="add-btn" onclick="A.addPlayer()">＋ 新增參賽者</button></div>
           ${ui.error ? `<div class="error">${esc(ui.error)}</div>` : ''}
-        </div>
-        <div class="actions center">
-          <button class="gold big" onclick="A.assign()">🎲 抽籤分組</button>
+          ${n ? `
+            <div class="entered">
+              <span class="muted small">已加入：</span>
+              ${state.entries.map((e) => `<span class="chip">${esc(e.name)}</span>`).join('')}
+              <button class="ghost small" onclick="A.undoEntry()">↩ 刪除最後一位</button>
+            </div>` : ''}
         </div>`;
     }
-    const n = matchCount();
     return `
-      <div class="grid-3">
-        ${teamBox('judges', 'JUDGES', '評審', state.judges, 0)}
-        ${teamBox('black', 'BLACK', '黑隊', state.black, 1)}
-        ${teamBox('white', 'WHITE', '白隊', state.white, 2)}
+      <div class="result-banner reveal" style="margin-top:0">
+        <div class="big">分隊完成！</div>
+        <p class="muted">每隊都有一位秘密評審，是誰呢？🤫</p>
+      </div>
+      <div class="grid-2" style="margin-top:16px">
+        ${['black', 'white'].map((t, k) => `
+          <div class="team ${t} reveal" style="animation-delay:${0.2 + k * 0.25}s">
+            <div class="label">${TEAM_EN[t]}<small>${TEAM_NAME[t]}</small></div>
+            <ul>${state[t].map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
+            <div class="assigned-ing">指定食材<b>${esc(state.ingredientFor[t] || '—')}</b></div>
+          </div>`).join('')}
       </div>
       <div class="card" style="margin-top:16px">
-        <h3>1v1 對戰組合（共 ${n} 場）</h3>
-        ${matchupList()}
-        ${state.black.length !== state.white.length ? `<div class="hint">兩隊人數不同，多出的成員在個人戰中擔任助手，團體戰一起上場。</div>` : ''}
+        <h3>🔒 忘記自己的角色？</h3>
+        <p class="muted small" style="margin-top:-6px">點自己的名字，偷偷再看一次。</p>
+        <div class="peek-list">${state.entries.map((e, i) => `<button onclick="A.peek(${i})">${esc(e.name)}</button>`).join('')}</div>
       </div>
       <div class="actions">
-        <button onclick="A.editPlayers()">✎ 修改名單</button>
-        <button onclick="A.assign()">🎲 重新抽籤</button>
+        <button onclick="A.redoTeams()">↺ 重新分隊</button>
         <button class="primary" onclick="A.next()">下一步 →</button>
-      </div>`;
+      </div>
+      ${ui.peek !== null && ui.peek !== undefined ? roleCard(ui.peek, false) : ''}`;
   }
 
   function teamBox(cls, en, zh, members, delay) {
@@ -336,23 +362,8 @@
       </div>`;
   }
 
-  function matchupList(showIngredients = false) {
-    let html = '';
-    for (let i = 0; i < matchCount(); i++) {
-      html += `
-        <div class="match">
-          <div class="side"><span class="pill black">黑</span> ${esc(state.black[i])}</div>
-          <div class="vs">${showIngredients && state.ingredients[i] ? `<span style="font-family:'Noto Sans TC';font-size:.95rem">第 ${i + 1} 場 · ${esc(state.ingredients[i])}</span>` : `VS`}</div>
-          <div class="side right">${esc(state.white[i])} <span class="pill white">白</span></div>
-        </div>`;
-    }
-    return html;
-  }
-
   // ---- Step 2: procurement ----
   function pageProcure() {
-    const n = matchCount();
-    const filled = state.ingredients.slice(0, n).filter((x) => x && x.trim()).length === n;
     const spendOk = state.spend.black !== '' && state.spend.white !== '';
     let result = '';
     if (spendOk) {
@@ -361,11 +372,10 @@
         result = `
           <div class="result-banner">
             <div class="big">平手！</div>
-            <p class="muted">兩隊花費相同，請評審決定由哪一隊抽卡</p>
-            <div class="actions center">
-              <button class="${state.purchaseWinner === 'black' ? 'gold' : ''}" onclick="A.setPurchaseWinner('black')">黑隊</button>
-              <button class="${state.purchaseWinner === 'white' ? 'gold' : ''}" onclick="A.setPurchaseWinner('white')">白隊</button>
-            </div>
+            <p class="muted">兩隊花費相同，擲硬幣決定採購勝隊</p>
+            ${state.purchaseWinner
+              ? `<div class="big reveal">${TEAM_NAME[state.purchaseWinner]} 🪙</div><p class="muted">抽 2 張特權卡；${TEAM_NAME[other(state.purchaseWinner)]}抽 1 張</p>`
+              : `<div class="actions center"><button class="primary big" onclick="A.coinFlip()">🪙 擲硬幣</button></div>`}
           </div>`;
       } else {
         const win = b < w ? 'black' : 'white';
@@ -373,21 +383,12 @@
           <div class="result-banner reveal">
             <div class="muted">採購戰勝隊</div>
             <div class="big">${TEAM_NAME[win]} 🛒</div>
-            <p class="muted">花費少 $${Math.abs(b - w).toLocaleString()}，可抽取一張團體賽用的特權卡</p>
+            <p class="muted">花費少 $${Math.abs(b - w).toLocaleString()}，抽 2 張特權卡；${TEAM_NAME[other(win)]}抽 1 張</p>
           </div>`;
       }
     }
-    const canNext = filled && spendOk && state.purchaseWinner;
     return `
       <div class="card rule-card">${procureRulesHtml()}</div>
-      <div class="card">
-        <h3>評審指定第一輪個人戰主食材</h3>
-        ${Array.from({ length: n }, (_, i) => `
-          <div class="ingredient-row">
-            <label>第 ${i + 1} 場</label>
-            <input type="text" placeholder="${esc(state.black[i])} vs ${esc(state.white[i])} 的主食材" value="${esc(state.ingredients[i] || '')}" oninput="A.setIngredient(${i}, this.value)">
-          </div>`).join('')}
-      </div>
       <div class="grid-2">
         ${['black', 'white'].map((t) => `
           <div class="team ${t}">
@@ -396,55 +397,40 @@
               <span>$</span>
               <input type="number" min="0" step="0.01" inputmode="decimal" value="${esc(state.spend[t])}" onchange="A.setSpend('${t}', this.value)" placeholder="0">
             </div>
+            <div class="assigned-ing">指定食材<b>${esc(state.ingredientFor[t] || '—')}</b></div>
           </div>`).join('')}
       </div>
       ${result}
-      <div class="hint" id="ing-hint" style="text-align:right;${filled ? 'display:none' : ''}">請先填完每場的主食材</div>
-      ${nav(canNext)}`;
+      ${nav(spendOk && !!state.purchaseWinner)}`;
   }
 
-  // ---- Draw pages ----
-  function ensureDraw(key, team, count) {
-    const d = state.draws[key];
-    if (!d || d.team !== team || d.count !== count) {
-      if (!team || !count) {
-        delete state.draws[key];
-      } else {
-        state.draws[key] = { team, count, cards: shuffle(clone(state.settings.deck)), picked: [] };
-      }
-      save();
-    }
-    return state.draws[key];
-  }
-
-  function drawPage(key, team, count, intro) {
-    if (!team || !count) {
-      delete state.draws[key];
-      save();
-      return `
-        <div class="result-banner">
-          <div class="big">本階段無人抽卡</div>
-          <p class="muted">${intro}</p>
-        </div>
-        ${nav(true)}`;
-    }
-    const d = ensureDraw(key, team, count);
-    const done = d.picked.length >= d.count;
+  // ---- Step 3: shared draw (winner 2 cards, other team 1) ----
+  function pageDrawPurchase() {
+    const win = state.purchaseWinner;
+    if (!win) return `<div class="result-banner" style="margin-top:0"><div class="big">還沒決定採購勝隊</div><p class="muted">請回上一步輸入兩隊總花費</p></div>${nav(false)}`;
+    let d = state.draws.purchase;
+    if (!d || !d.picks) { d = state.draws.purchase = { cards: shuffle(clone(state.settings.deck)), picks: [] }; save(); }
+    const order = drawOrder();
+    const done = d.picks.length >= order.length;
+    const turn = done ? null : order[d.picks.length];
+    const left = done ? 0 : order.slice(d.picks.length).filter((t) => t === turn).length;
+    const ownerOf = (p) => (d.picks.find((x) => x.p === p) || {}).team;
     return `
       <div class="result-banner" style="margin-top:0">
-        <div>${intro}</div>
-        <div class="big">${TEAM_NAME[team]} 抽 ${count} 張</div>
-        <p class="muted">${done ? '抽卡完成！' : `請 ${TEAM_NAME[team]} 點選卡片翻開（還剩 ${count - d.picked.length} 張）`}</p>
+        <div class="muted">${TEAM_NAME[win]}抽 2 張 · ${TEAM_NAME[other(win)]}抽 1 張</div>
+        <div class="big">${done ? '抽卡完成！' : `輪到 ${TEAM_NAME[turn]}`}</div>
+        <p class="muted">${done ? '最後剩下的一張不使用' : `點一張卡翻開（還剩 ${left} 張）`}</p>
       </div>
       <div class="deck">
         ${d.cards.map((c, p) => {
-          const mine = d.picked.includes(p);
-          const flipped = mine || done;
+          const by = ownerOf(p);
+          const flipped = !!by || done;
           return `
-            <button class="pcard ${flipped ? 'flipped' : ''} ${mine ? 'mine' : done ? 'other' : ''}" ${done || mine ? 'disabled' : ''} onclick="A.pick('${key}', ${p})">
+            <button class="pcard ${flipped ? 'flipped' : ''} ${by ? 'mine owner-' + by : done ? 'other' : ''}" ${flipped ? 'disabled' : ''} onclick="A.pick(${p})">
               <div class="inner">
                 <div class="face back">?</div>
                 <div class="face front">
+                  ${by ? `<span class="pill ${by} owner-tag">${TEAM_NAME[by]}</span>` : ''}
                   ${c.icon ? `<div class="ic">${esc(c.icon)}</div>` : ''}
                   <div class="t">${esc(c.title)}</div>
                   <div class="d">${esc(c.desc)}</div>
@@ -476,85 +462,43 @@
       </div>`;
   }
 
-  function pageDrawPurchase() {
-    return drawPage('purchase', state.purchaseWinner, 1, '採購戰勝隊');
-  }
-
-  function pageDrawR1() {
-    const r = r1Results();
-    const intro = r.team
-      ? `個人戰結果 ${TEAM_NAME[r.team]} ${Math.max(r.bw, r.ww)} : ${Math.min(r.bw, r.ww)} 獲勝`
-      : `個人戰結果 ${r.bw} : ${r.ww} 平手`;
-    return drawPage('r1', r.team, r.count, intro);
-  }
-
-  // ---- Timer pages ----
-  function getTimer(key, minutes) {
-    if (!state.timers[key]) {
-      state.timers[key] = { total: minutes * 60, remaining: minutes * 60, endAt: null, beeped: false };
-      save();
-    }
-    return state.timers[key];
-  }
-  const timerRemaining = (t) => (t.endAt ? Math.max(0, Math.ceil((t.endAt - Date.now()) / 1000)) : t.remaining);
-
-  function timerBlock(key, minutes, extra = '') {
-    const t = getTimer(key, minutes);
-    const running = !!t.endAt;
-    if (!t.started) {
-      return `
-        <div class="card timer-wrap" id="timer-wrap" data-key="${key}">
-          <div class="timer" id="timer-display">--:--</div>
-          <div class="timer-setup">
-            <label for="timer-min">評審設定倒數時間</label>
-            <input type="number" id="timer-min" min="1" max="600" value="${Math.round(t.total / 60)}" oninput="A.timerSet('${key}', this.value)">
-            <span>分鐘</span>
-          </div>
-          <div class="timer-controls">
-            <button class="gold big" onclick="A.timerToggle('${key}')">▶ 開始倒數</button>
-          </div>
-          ${extra}
-        </div>`;
-    }
+  // ---- Step 4: cooking (no time limit) ----
+  function pageCook() {
     return `
-      <div class="card timer-wrap ${ui.fullscreen ? 'fs' : ''}" id="timer-wrap" data-key="${key}">
-        <div class="timer" id="timer-display">--:--</div>
-        <div class="progress"><div id="timer-bar"></div></div>
-        <div class="muted" id="timer-msg" style="margin-top:10px">&nbsp;</div>
-        <div class="timer-controls">
-          <button class="${running ? '' : 'gold'} big" onclick="A.timerToggle('${key}')">${running ? '⏸ 暫停' : '▶ 繼續'}</button>
-          <button onclick="A.timerAdd('${key}', -60)">−1 分</button>
-          <button onclick="A.timerAdd('${key}', 60)">＋1 分</button>
-          <button onclick="A.timerReset('${key}')">↺ 重新設定時間</button>
-          <button onclick="A.toggleFs()">${ui.fullscreen ? '⤡ 離開全螢幕' : '⤢ 全螢幕'}</button>
-        </div>
-        ${extra}
-      </div>`;
-  }
-
-  function pageRound1() {
-    return `
-      <div class="card no-timer"><div class="nt-icon">🍳</div><div><b>不限時，慢慢煮！</b><div class="muted small">選手完成料理後，按「進入評分」。</div></div></div>
-      <div class="card">
-        <h3>本輪對戰與主食材</h3>
-        ${matchupList(true)}
-      </div>
-      ${heldSummary()}
-      ${nav(true, '進入評分 →')}`;
-  }
-
-  function pageRound2() {
-    return `
-      <div class="card no-timer"><div class="nt-icon">🍳</div><div><b>不限時，全隊一起完成主食！</b><div class="muted small">兩隊都完成後，按「進入最終評分」。</div></div></div>
-      <div class="card"><h3>特權卡使用</h3>${cardUsePanel()}</div>
+      <div class="card no-timer"><div class="nt-icon">🍳</div><div><b>不限時，兩隊各完成三道料理！</b><div class="muted small">全部煮完後，按「下一步」揭曉秘密評審。</div></div></div>
       <div class="grid-2">
         ${['black', 'white'].map((t) => `
           <div class="team ${t}">
             <div class="label">${TEAM_EN[t]}<small>${TEAM_NAME[t]}</small></div>
-            <ul>${state[t].map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
+            <div class="members-line">${state[t].map(esc).join('、')}</div>
+            <ol class="dish-list">${DISHES.map((x) => `<li><b>${x.name}</b><span>${esc(x.sub(t))}</span></li>`).join('')}</ol>
           </div>`).join('')}
       </div>
-      ${nav(true, '進入最終評分 →')}`;
+      <div class="card" style="margin-top:16px"><h3>特權卡使用</h3>${cardUsePanel()}</div>
+      ${nav(true, '全部煮完，下一步 →')}`;
+  }
+
+  // ---- Step 5: secret judges reveal ----
+  function pageReveal() {
+    if (!state.judgesRevealed) {
+      return `
+        <div class="card curtain">
+          <div class="q">🕵️</div>
+          <p>兩隊都藏著一位秘密評審……他們是誰？</p>
+          <button class="gold big" onclick="A.revealJudges()">揭曉秘密評審</button>
+        </div>
+        ${nav(false)}`;
+    }
+    return `
+      <div class="grid-2">
+        ${['black', 'white'].map((t, k) => `
+          <div class="team ${t} reveal judge-reveal" style="animation-delay:${k * 0.7}s">
+            <div class="label">${TEAM_EN[t]}<small>${TEAM_NAME[t]}的秘密評審</small></div>
+            <div class="jr-name">🕵️ ${esc(state.judges[k])}</div>
+            <div class="jr-note">幫${TEAM_NAME[other(t)]}選了「${esc(state.ingredientFor[other(t)] || '—')}」</div>
+          </div>`).join('')}
+      </div>
+      ${nav(true, '進入評分 →')}`;
   }
 
   // ---- Scoring ----
@@ -602,66 +546,14 @@
       </div>`;
   }
 
-  function pageScoreR1() {
-    if (state.blind.length !== matchCount()) {
-      state.blind = Array.from({ length: matchCount() }, () => Math.random() < 0.5);
-      save();
-    }
-    const tab = ui.tab.r1;
-    const both = state.submitted.r1[0] && state.submitted.r1[1];
-    let body;
-    if (tab < 2) {
-      const dishes = Array.from({ length: matchCount() }, (_, i) => `
-        <h3 style="margin:${i ? '24px' : '0'} 0 10px">第 ${i + 1} 場 · 主食材：${esc(state.ingredients[i] || '—')}</h3>
-        <div class="grid-2">
-          ${dishCard('r1', tab, i + dishOfTeam(i, 'black'), `料理 ${i * 2 + 1}（黑隊）`, '不顯示選手姓名')}
-          ${dishCard('r1', tab, i + dishOfTeam(i, 'white'), `料理 ${i * 2 + 2}（白隊）`, '不顯示選手姓名')}
-        </div>`).join('');
-      body = judgePanel('r1', tab, dishes);
-    } else {
-      const r = r1Results();
-      body = `
-        <div class="card">
-          <div class="scoreline">
-            <span class="pill black" style="font-size:1rem">黑隊</span>
-            <span class="n">${r.bw}</span><span class="dash">:</span><span class="n">${r.ww}</span>
-            <span class="pill white" style="font-size:1rem">白隊</span>
-          </div>
-          <div style="overflow-x:auto">
-          <table class="results">
-            <tr><th>場次</th><th>主食材</th><th>黑隊選手</th><th>${esc(state.judges[0])}</th><th>${esc(state.judges[1])}</th><th>黑隊合計</th><th>白隊合計</th><th>${esc(state.judges[1])}</th><th>${esc(state.judges[0])}</th><th>白隊選手</th></tr>
-            ${r.rows.map((x) => `
-              <tr>
-                <td>${x.i + 1}</td>
-                <td>${esc(state.ingredients[x.i] || '')}</td>
-                <td class="${x.winner === 'black' ? 'win' : ''}">${esc(state.black[x.i])}<div class="muted small">料理 ${x.i * 2 + 1}</div></td>
-                <td>${fmt(x.bj[0])}</td><td>${fmt(x.bj[1])}</td>
-                <td class="${x.winner === 'black' ? 'win' : ''}">${fmt(x.bt)}</td>
-                <td class="${x.winner === 'white' ? 'win' : ''}">${fmt(x.wt)}</td>
-                <td>${fmt(x.wj[1])}</td><td>${fmt(x.wj[0])}</td>
-                <td class="${x.winner === 'white' ? 'win' : ''}">${esc(state.white[x.i])}<div class="muted small">料理 ${x.i * 2 + 2}</div></td>
-              </tr>`).join('')}
-          </table>
-          </div>
-          <div class="result-banner">
-            ${r.team
-              ? `<div class="big">${TEAM_NAME[r.team]} 勝出 ${Math.max(r.bw, r.ww)} : ${Math.min(r.bw, r.ww)}</div><p class="muted">可抽 ${r.count} 張特權卡</p>`
-              : `<div class="big">平手 ${r.bw} : ${r.ww}</div><p class="muted">本階段無人抽卡</p>`}
-          </div>
-        </div>`;
-    }
-    return `${scoringTabs('r1', '📊 揭曉結果')}${body}${nav(both)}`;
-  }
-
+  // ---- Step 6: scoring + champion ----
   function pageFinal() {
     const tab = ui.tab.r2;
     let body;
     if (tab < 2) {
-      const dishes = `
-        <div class="grid-2">
-          ${dishCard('r2', tab, 'black', '黑隊主餐', esc(state.black.join('、')))}
-          ${dishCard('r2', tab, 'white', '白隊主餐', esc(state.white.join('、')))}
-        </div>`;
+      const dishes = ['black', 'white'].map((t, k) => `
+        <h3 style="margin:${k ? '26px' : '0'} 0 10px">${pill(t)} ${TEAM_NAME[t]}的三道料理</h3>
+        <div class="grid-3">${DISHES.map((x) => dishCard('r2', tab, `${t}-${x.key}`, x.name, esc(x.sub(t)))).join('')}</div>`).join('');
       body = judgePanel('r2', tab, dishes);
     } else if (!state.revealed) {
       body = `
@@ -671,8 +563,12 @@
           <button class="gold big" onclick="A.revealChampion()">🏆 揭曉黑白大廚總冠軍</button>
         </div>`;
     } else {
-      const r = r2Results();
+      const r = finalResults();
       const w = r.winner;
+      const rowsOf = (t) => r.rows.filter((x) => x.t === t).map((x) => `
+        <tr><td>${pill(t)} ${x.x.name}</td><td>${fmt(x.js[0])}</td><td>${fmt(x.js[1])}</td><td>${fmt(x.js[0] + x.js[1])}</td></tr>`).join('');
+      const totalRow = (t, sum) => `
+        <tr class="total-row"><td><b>${TEAM_NAME[t]}總分</b></td><td>${fmt(r.tot[t][0])}</td><td>${fmt(r.tot[t][1])}</td><td class="${w === t ? 'win' : ''}">${fmt(sum)}</td></tr>`;
       body = `
         <div class="champion ${w || 'tie'} reveal">
           <div class="trophy">🏆</div>
@@ -682,12 +578,13 @@
         </div>
         <div class="card" style="margin-top:16px">
           <h3>最終評分</h3>
+          <div style="overflow-x:auto">
           <table class="results">
-            <tr><th></th><th>${esc(state.judges[0])}</th><th>${esc(state.judges[1])}</th><th>合計</th></tr>
-            <tr><td>${pill('black')}</td><td>${fmt(r.bj[0])}</td><td>${fmt(r.bj[1])}</td><td class="${w === 'black' ? 'win' : ''}">${fmt(r.bt)}</td></tr>
-            <tr><td>${pill('white')}</td><td>${fmt(r.wj[0])}</td><td>${fmt(r.wj[1])}</td><td class="${w === 'white' ? 'win' : ''}">${fmt(r.wt)}</td></tr>
+            <tr><th>料理</th><th>${esc(state.judges[0])}</th><th>${esc(state.judges[1])}</th><th>小計</th></tr>
+            ${rowsOf('black')}${totalRow('black', r.bt)}
+            ${rowsOf('white')}${totalRow('white', r.wt)}
           </table>
-          <p class="muted small">個人戰戰績：黑隊 ${r1Results().bw} : ${r1Results().ww} 白隊</p>
+          </div>
         </div>
         <div class="actions center"><button onclick="A.newGame()">🔁 開新的一局</button></div>`;
     }
@@ -771,8 +668,8 @@
       state.step = Math.max(0, Math.min(i, STEPS.length - 1));
       // every time a draw page is opened, deal the 4 cards in a fresh random order
       // (kept only once a card has been flipped, so results can't be re-rolled)
-      const drawKey = { 2: 'purchase', 5: 'r1' }[state.step];
-      if (drawKey && state.draws[drawKey] && state.draws[drawKey].picked.length === 0) delete state.draws[drawKey];
+      const dp = state.draws.purchase;
+      if (state.step === 2 && dp && (!dp.picks || dp.picks.length === 0)) delete state.draws.purchase;
       state.maxStep = Math.max(state.maxStep, state.step);
       ui.fullscreen = false;
       save(); render();
@@ -782,75 +679,66 @@
       if (state.step === 0 && !state.assigned) return;
       A.go(state.step + 1);
     },
-    setPlayer(i, v) { state.players[i] = v; ui.error = ''; save(); },
-    addPlayer() {
-      state.players.push('');
-      save(); render();
-      const inputs = document.querySelectorAll('[data-player]');
-      inputs[inputs.length - 1]?.focus();
-    },
-    removePlayer(i) { state.players.splice(i, 1); state.judgeFlags.splice(i, 1); save(); render(); },
-    setJudgeMode(m) { state.judgeMode = m; ui.error = ''; save(); render(); },
-    toggleJudge(i) {
-      if (!state.judgeFlags[i] && state.judgeFlags.filter(Boolean).length >= 2) {
-        ui.error = '最多只能指定 2 位評審，請先取消另一位';
-      } else {
-        state.judgeFlags[i] = !state.judgeFlags[i];
-        ui.error = '';
-      }
-      save(); render();
-    },
-    assign() {
-      const names = state.players.map((s) => s.trim()).filter(Boolean);
-      if (names.length < 4) { ui.error = '至少需要 4 位參賽者'; render(); return; }
-      if (new Set(names).size !== names.length) { ui.error = '有重複的姓名，請修改'; render(); return; }
-      let judges, rest;
-      if (state.judgeMode === 'pick') {
-        judges = state.players.map((s, i) => (state.judgeFlags[i] ? s.trim() : '')).filter(Boolean);
-        if (judges.length !== 2) { ui.error = '請勾選 2 位有填姓名的評審'; render(); return; }
-        rest = shuffle(names.filter((n) => !judges.includes(n)));
-      } else {
-        const s = shuffle(names);
-        judges = s.slice(0, 2);
-        rest = s.slice(2);
-      }
-      state.judges = judges;
-      const firstTeam = Math.random() < 0.5 ? 'black' : 'white';
-      state.black = []; state.white = [];
-      rest.forEach((n, k) => state[k % 2 === 0 ? firstTeam : other(firstTeam)].push(n));
-      state.assigned = true;
-      // reset everything downstream
-      Object.assign(state, {
-        maxStep: 0, ingredients: [], spend: { black: '', white: '' }, purchaseWinner: null,
-        draws: {}, timers: {}, used: {}, blind: [], scores: { r1: [{}, {}], r2: [{}, {}] },
-        submitted: { r1: [false, false], r2: [false, false] }, revealed: false,
-      });
+    submitName() {
+      const el = $('#entry-name');
+      const name = (el ? el.value : '').trim();
+      if (!name) { ui.error = '請輸入名字'; render(); return; }
+      if (state.entries.some((e) => e.name === name)) { ui.error = '這個名字已經有人用了，請換一個'; render(); return; }
+      ensureSlots();
+      const slot = state.roleSlots[state.entries.length];
+      state.entries.push({ name, team: slot.team, role: slot.role });
+      state.revealIdx = state.entries.length - 1;
       ui.error = '';
+      save(); render(); window.scrollTo(0, 0);
+    },
+    pickIngredient(team, x) { state.ingredientFor[team] = x; save(); render(); },
+    handOff() {
+      state.revealIdx = null;
+      if (state.entries.length >= TOTAL_PLAYERS) {
+        state.black = state.entries.filter((e) => e.team === 'black').map((e) => e.name);
+        state.white = state.entries.filter((e) => e.team === 'white').map((e) => e.name);
+        state.judges = ['black', 'white'].map((t) => state.entries.find((e) => e.team === t && e.role === 'judge').name);
+        state.assigned = true;
+      }
+      save(); render(); window.scrollTo(0, 0);
+    },
+    undoEntry() {
+      const e = state.entries[state.entries.length - 1];
+      if (!e || !confirm(`刪除「${e.name}」？（他的角色會留給下一位輸入的人）`)) return;
+      if (e.role === 'judge') state.ingredientFor[other(e.team)] = null;
+      state.entries.pop();
       save(); render();
     },
-    editPlayers() { state.assigned = false; save(); render(); },
-    setIngredient(i, v) {
-      // never re-render here: it would break Chinese IME (注音) composition
-      state.ingredients[i] = v; save();
-      const n = matchCount();
-      const filled = state.ingredients.slice(0, n).filter((x) => x && x.trim()).length === n;
-      const hint = $('#ing-hint'); if (hint) hint.style.display = filled ? 'none' : '';
-      const btn = $('#btn-next');
-      if (btn) btn.disabled = !(filled && state.spend.black !== '' && state.spend.white !== '' && state.purchaseWinner);
+    peek(i) {
+      if (!confirm(`確定是「${state.entries[i].name}」本人在看嗎？`)) return;
+      ui.peek = i; render();
+    },
+    closePeek() { ui.peek = null; render(); },
+    redoTeams() {
+      if (!confirm('重新分隊？所有人要重新輸入名字，之後的進度也會清除。')) return;
+      const settings = state.settings;
+      state = freshState(settings);
+      ui.peek = null;
+      save(); render();
     },
     setSpend(t, v) {
       state.spend[t] = v;
       const b = state.spend.black, w = state.spend.white;
+      const before = state.purchaseWinner;
       state.purchaseWinner = b !== '' && w !== '' && Number(b) !== Number(w) ? (Number(b) < Number(w) ? 'black' : 'white') : null;
+      if (state.purchaseWinner !== before) delete state.draws.purchase;
       save(); render();
     },
     setPurchaseWinner(t) { state.purchaseWinner = t; save(); render(); },
-    pick(key, p) {
-      const d = state.draws[key];
-      if (!d || d.picked.includes(p) || d.picked.length >= d.count) return;
-      d.picked.push(p);
+    coinFlip() { state.purchaseWinner = rand() < 0.5 ? 'black' : 'white'; save(); render(); },
+    pick(p) {
+      const d = state.draws.purchase;
+      const order = drawOrder();
+      if (!d || !d.picks || d.picks.length >= order.length || d.picks.some((x) => x.p === p)) return;
+      d.picks.push({ team: order[d.picks.length], p });
       save(); render();
     },
+    revealJudges() { state.judgesRevealed = true; save(); render(); confetti(); },
     timerToggle(key) {
       const t = state.timers[key];
       if (t.endAt) { t.remaining = timerRemaining(t); t.endAt = null; }
@@ -926,13 +814,8 @@
       beep();
     },
     newGame() {
-      if (!confirm('開新的一局？（保留參賽者名單與設定）')) return;
-      const players = state.players.slice();
-      const prev = state;
+      if (!confirm('開新的一局？（保留設定，所有人重新輸入名字分隊）')) return;
       state = freshState(state.settings);
-      state.players = players;
-      state.judgeMode = prev.judgeMode;
-      state.judgeFlags = prev.judgeFlags;
       ui.tab = { r1: 0, r2: 0 };
       save(); render();
     },
