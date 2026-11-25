@@ -6,6 +6,9 @@ A simple Culinary Class Wars–style cooking battle, made for our Denver trip! O
 
 🔗 https://chiawen0104.github.io/culinary_class_wars-denver_edition/
 
+小天使小主人抽籤：https://chiawen0104.github.io/culinary_class_wars-denver_edition/little-master.html
+
+
 ## How It Works
 
 1. **Player Setup**: Enter names (at least 4; tap "＋" to add). The 2 judges can be chosen or drawn at random; everyone else is drawn into the Black Team and the White Team.
